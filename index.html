@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>تجربة ملابس افتراضية - Prototype</title>
+  <style>
+    /* تصميم واجهة بسيط وجميل */
+    :root{
+      --accent:#ff5a7a;
+      --bg:#0f1724;
+      --card:#0b1220;
+      --glass: rgba(255,255,255,0.04);
+      --text:#e6eef8;
+    }
+    *{box-sizing:border-box;font-family:Inter, system-ui, sans-serif}
+    body{
+      margin:0;
+      min-height:100vh;
+      background:
+        linear-gradient(180deg, rgba(10,12,20,1), rgba(12,16,28,1));
+      color:var(--text);
+      display:flex;
+      align-items:flex-start;
+      justify-content:center;
+      padding:28px;
+      gap:20px;
+    }
+
+    .app {
+      width:1100px;
+      max-width:100%;
+      display:grid;
+      grid-template-columns: 640px 1fr;
+      gap:20px;
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:12px;
+      padding:14px;
+      box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .camera-wrap{
+      position:relative;
+      width:100%;
+      height:480px;
+      border-radius:10px;
+      overflow:hidden;
+      background:#000;
+    }
+
+    video{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      transform: scaleX(-1); /* mirror for natural try-on */
+    }
+
+    canvas.overlay{
+      position:absolute;
+      left:0;
+      top:0;
+      width:100%;
+      height:100%;
+      pointer-events:none; /* allow clicks to pass through */
+      transform: scaleX(-1); /* mirror so overlay matches mirrored video */
+    }
+
+    /* controls */
+    .controls{
+      display:flex;
+      gap:8px;
+      margin-top:10px;
+      flex-wrap:wrap;
+    }
+    .btn{
+      background:linear-gradient(90deg,var(--accent),#ff8aa3);
+      padding:10px 14px;
+      border-radius:8px;
+      color:white;
+      font-weight:600;
+      border:none;
+      cursor:pointer;
+      box-shadow: 0 6px 18px rgba(255,90,122,0.12);
+    }
+    .btn.ghost{
+      background:transparent;
+      border:1px solid rgba(255,255,255,0.06);
+      box-shadow:none;
+    }
+    .gallery{
+      display:flex;
+      gap:10px;
+      margin-top:12px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .thumb{
+      width:72px;
+      height:72px;
+      border-radius:8px;
+      background:var(--glass);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      border:1px solid rgba(255,255,255,0.02);
+    }
+    .thumb.selected{
+      box-shadow:0 6px 18px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,90,122,0.12);
+      transform: translateY(-3px);
+    }
+
+    /* info column */
+    .info{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    h2{margin:0 0 6px 0;font-size:18px}
+    p.small{margin:0;color:#b8c7dd;font-size:13px}
+
+    .uploader{
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    input[type=file]{display:none}
+    .note{font-size:13px;color:#9fb0d0}
+    .snapshot-preview{
+      margin-top:8px;
+      border-radius:8px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,0.03);
+    }
+    .snapshot-preview img{display:block;width:100%}
+    footer{font-size:12px;color:#9fb0d0;margin-top:8px}
+    @media (max-width:980px){
+      .app{grid-template-columns:1fr;align-items:center}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- القسم الأيسر: الكاميرا + المعاينة -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <h2>معاينة التجربة الافتراضية</h2>
+          <p class="small">شغّل الكاميرا واختر قطعة ملابس لتظهر فوق جسم المستخدم.</p>
+        </div>
+        <div style="text-align:right">
+          <div class="note">نسخة تجريبية — Prototype</div>
+        </div>
+      </div>
+
+      <div class="camera-wrap" id="cameraWrap">
+        <video id="video" playsinline></video>
+        <canvas id="overlay" class="overlay"></canvas>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn">تشغيل الكاميرا</button>
+        <button id="stopBtn" class="btn ghost">إيقاف الكاميرا</button>
+        <button id="captureBtn" class="btn">التقاط صورة</button>
+
+        <label class="btn ghost" title="رفع صورة قميص PNG">
+          رفع PNG
+          <input type="file" id="fileInput" accept="image/png,image/webp,image/jpeg">
+        </label>
+
+        <button id="clearUpload" class="btn ghost">مسح الرفع</button>
+      </div>
+
+      <div class="gallery" id="gallery">
+        <!-- thumbs تُملأ آليًا من JS -->
+      </div>
+
+      <div id="snapshotArea" class="snapshot-preview" style="display:none;margin-top:12px">
+        <img id="snapshotImg" alt="snapshot" />
+      </div>
+
+      <footer>ملاحظة: اضغط "تشغيل الكاميرا" ثم اختر قطعة من المعرض أو ارفع ملف PNG شفاف لتجربته.</footer>
+    </div>
+
+    <!-- العمود الأيمن: قائمة الملابس والمعلومات -->
+    <div class="card info">
+      <div>
+        <h2>قائمة الملابس (مع مثال رسومي)</h2>
+        <p class="small">هنا بعض القمصان التجريبية مرسومة بالـCanvas — يمكنك رفع صورك PNG شفافة لنتائج أفضل.</p>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-direction:column">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="thumb" data-type="svg" data-id="shirt_red" title="قميص أحمر">
+            <svg width="44" height="44" viewBox="0 0 60 60">
+              <path d="M10 10 L20 6 L30 12 L40 6 L50 10 L47 24 L13 24 Z" fill="#ff5a7a"/>
+              <rect x="12" y="24" width="36" height="28" rx="4" fill="#ff9fb0"/>
+            </svg>
+          </div>
+
+          <div class="thumb" data-type="svg" data-id="shirt_blue" title="قميص أزرق">
+            <svg width="44" height="44" viewBox="0 0 60 60">
+              <path d="M10 10 L20 6 L30 12 L40 6 L50 10 L47 24 L13 24 Z" fill="#3aa0ff"/>
+              <rect x="12" y="24" width="36" height="28" rx="4" fill="#8fcaff"/>
+            </svg>
+          </div>
+
+          <div class="thumb" data-type="svg" data-id="shirt_green" title="قميص أخضر">
+            <svg width="44" height="44" viewBox="0 0 60 60">
+              <path d="M10 10 L20 6 L30 12 L40 6 L50 10 L47 24 L13 24 Z" fill="#2ecc71"/>
+              <rect x="12" y="24" width="36" height="28" rx="4" fill="#86e5a5"/>
+            </svg>
+          </div>
+
+          <div class="thumb" id="thumbNone" title="إخفاء القميص">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#b7c6db" stroke-width="1.6">
+              <path d="M3 3 L21 21"></path>
+              <circle cx="12" cy="12" r="8" stroke="#9fb0d0"></circle>
+            </svg>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:8px 0 6px 0">خيارات وتجارب</h3>
+          <p class="small">- استخدم زر الالتقاط لحفظ صورة التجربة. <br> - لنتائج واقعية استخدم صور PNG شفافة للقماش (مستوى عالٍ من الدقة).\n</p>
+        </div>
+
+        <div>
+          <h3 style="margin:8px 0 6px 0">تلميحات تقنية</h3>
+          <p class="small">نقاط التتبع المستخدمة: مفاصل الكتف والورك من MediaPipe لتحديد الموضع، الزاوية، والحجم.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MediaPipe scripts (من CDN). إن فُقدت، ضع نسخة محلية أو استخدم بديل) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <script>
+    /*************************************************************************
+     * Prototype JavaScript
+     * - يشغل الكاميرا
+     * - يستعمل MediaPipe Pose لاستخراج مفاصل الجسم
+     * - يرسم "قميص" افتراضي على الكانفاس فوق الجسم
+     * - يدعم رفع PNG لتجربتها (شفافية مطلوبة للحصول على أفضل نتائج)
+     *
+     * ملاحظات داخلية في التعليقات لتسهيل التعديل لاحقًا.
+     *************************************************************************/
+
+    // العناصر من DOM
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const captureBtn = document.getElementById('captureBtn');
+    const fileInput = document.getElementById('fileInput');
+    const clearUpload = document.getElementById('clearUpload');
+    const gallery = document.getElementById('gallery');
+    const snapshotArea = document.getElementById('snapshotArea');
+    const snapshotImg = document.getElementById('snapshotImg');
+
+    // canvas context
+    const ctx = overlay.getContext('2d');
+
+    // حالة التطبيق
+    let cameraRunning = false;
+    let camera = null;
+    let currentClothImage = null; // Image object لملف مرفوع
+    let currentClothMode = 'svg_shirt_red'; // أو 'image' عند رفع png
+    let selectedThumb = null;
+
+    // قياسات الكاميرا الفعلية (نضبط الكانفاس)
+    function resizeOverlay(){
+      const rect = video.getBoundingClientRect();
+      overlay.width = rect.width;
+      overlay.height = rect.height;
+    }
+
+    // إعداد MediaPipe Pose
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+      modelComplexity: 0, // خفيفة وسريعة - زودها إن أردت دقة أعلى
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // عند وجود نتائج من MediaPipe
+    pose.onResults(onResults);
+
+    // وظيفة تحويل النقطة من النسبية (0..1) إلى بيكسل داخل عنصر الفيديو المعروض
+    function landmarkToPoint(landmark, videoRect){
+      return {
+        x: landmark.x * videoRect.width,
+        y: landmark.y * videoRect.height
+      };
+    }
+
+    // يرسم قميص SVG مرسوم على الكانفاس كنسخة بديلة إن لم تكن هناك صورة PNG مرفوعة
+    function drawSVGShirt(ctx, cx, cy, width, height, angle, colorMain, colorAccent){
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      // ارسم مستطيل يمثل جسم القميص
+      const w = width;
+      const h = height;
+      ctx.fillStyle = colorMain;
+      roundRect(ctx, -w/2, -h*0.15, w, h*0.85, Math.max(12, w*0.06));
+      ctx.fill();
+
+      // ياقة / shoulders
+      ctx.fillStyle = colorAccent;
+      ctx.beginPath();
+      ctx.moveTo(-w*0.35, -h*0.15);
+      ctx.quadraticCurveTo(0, -h*0.45, w*0.35, -h*0.15);
+      ctx.lineTo(w*0.35, -h*0.03);
+      ctx.quadraticCurveTo(0, -h*0.3, -w*0.35, -h*0.03);
+      ctx.closePath();
+      ctx.fill();
+
+      // أكمام بسيطة
+      ctx.fillStyle = colorAccent;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, -h*0.05);
+      ctx.lineTo(-w/2 - w*0.18, h*0.18);
+      ctx.lineTo(-w/2 + w*0.02, h*0.18);
+      ctx.quadraticCurveTo(-w*0.18, h*0.03, -w/2, -h*0.05);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(w/2, -h*0.05);
+      ctx.lineTo(w/2 + w*0.18, h*0.18);
+      ctx.lineTo(w/2 - w*0.02, h*0.18);
+      ctx.quadraticCurveTo(w*0.18, h*0.03, w/2, -h*0.05);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // رسم مستطيل ذو زوايا دائرية
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    // الدالة الأساسية التي تتعامل مع نتائج Pose
+    function onResults(results){
+      // نتأكد أولًا من وجود الفيديو ومن قياسات الكانفاس
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
+      resizeOverlay();
+
+      const vw = overlay.width;
+      const vh = overlay.height;
+
+      // ترسم الخلفية الشفافة لتأكيد إعادة الرسم
+      ctx.clearRect(0,0,vw,vh);
+
+      // نرسم نصف شفافية خفيفة فوق الفيديو (اختياري)
+      // ctx.fillStyle = 'rgba(0,0,0,0.02)';
+      // ctx.fillRect(0,0,vw,vh);
+
+      if (!results.poseLandmarks) return;
+
+      // نقاط مفصلية مهمة: الكتف الأيسر (11) والكتف الأيمن (12) والوركين 23،24
+      const lshoulder = results.poseLandmarks[11];
+      const rshoulder = results.poseLandmarks[12];
+      const lhip = results.poseLandmarks[23];
+      const rhip = results.poseLandmarks[24];
+
+      // تحويل لنقاط بيكسل داخل مستطيل الفيديو المعروض
+      const rect = video.getBoundingClientRect();
+      // ملاحظة: landmarks x,y نسبة بالنسبة لصورة الفيديو الأصلية؛ لكن لأننا مرآة، استخدم العرض الفعلي للكانفاس
+      const ls = {x: lshoulder.x * vw, y: lshoulder.y * vh};
+      const rs = {x: rshoulder.x * vw, y: rshoulder.y * vh};
+      const lh = {x: lhip.x * vw, y: lhip.y * vh};
+      const rh = {x: rhip.x * vw, y: rhip.y * vh};
+
+      // مركز الكتفين
+      const centerShoulder = {x: (ls.x + rs.x)/2, y: (ls.y + rs.y)/2};
+      // مركز الوركين
+      const centerHip = {x: (lh.x + rh.x)/2, y: (lh.y + rh.y)/2};
+
+      // المسافة بين الكتفين تستخدم لحجم القميص (عرض)
+      const dx = rs.x - ls.x;
+      const dy = rs.y - ls.y;
+      const shoulderDist = Math.sqrt(dx*dx + dy*dy);
+
+      // زاوية دوران القميص (بقياس راديان)
+      const angle = Math.atan2(dy, dx);
+
+      // الارتفاع من الأكتاف حتى الورك يساعد لتحديد طول القميص
+      const verticalDist = Math.sqrt(Math.pow(centerHip.y - centerShoulder.y, 2) + Math.pow(centerHip.x - centerShoulder.x, 2));
+
+      // حساب الأبعاد النهائية للقميص
+      const shirtWidth = shoulderDist * 1.9; // مضاعف تحجيمي يمكن تعديله
+      const shirtHeight = Math.max(verticalDist * 1.1, shirtWidth * 0.9);
+
+      // رسم الخيار: صورة مرفوعة أم قميص مرسوم؟
+      if (currentClothImage && currentClothMode === 'image') {
+        // رسم صورة القميص المرفوعة (مفترضة أنها بتناسب القياس)
+        ctx.save();
+        ctx.translate(centerShoulder.x, centerShoulder.y + shirtHeight*0.06); // انزاحة طفيفة لأسفل
+        ctx.rotate(angle);
+        // ضبط الصورة لتتناسب داخل المستطيل
+        ctx.drawImage(currentClothImage, -shirtWidth/2, -shirtHeight*0.25, shirtWidth, shirtHeight);
+        ctx.restore();
+      } else {
+        // رسم قميص مرسوم (svg-like) يختلف لونه حسب الوضع
+        let main='#ff5a7a', accent='#ff9fb0';
+        if (currentClothMode === 'svg_shirt_blue'){ main='#3aa0ff'; accent='#8fcaff' }
+        if (currentClothMode === 'svg_shirt_green'){ main='#2ecc71'; accent='#86e5a5' }
+        if (currentClothMode === 'none'){ /* لا ترسم */ return; }
+        drawSVGShirt(ctx, centerShoulder.x, centerShoulder.y + shirtHeight*0.05, shirtWidth, shirtHeight, angle, main, accent);
+      }
+
+      // (اختياري) رسم نقاط للتصحيح أثناء التطوير:
+      // drawDebugPoints(ctx, [ls, rs, lh, rh], vw, vh);
+    }
+
+    // رسم نقاط debug (للمطوّر)
+    function drawDebugPoints(ctx, pts, vw, vh){
+      ctx.fillStyle='yellow';
+      pts.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+        ctx.fill();
+      });
+    }
+
+    // تشغيل الكاميرا باستخدام MediaPipe Camera util
+    function startCamera(){
+      if (cameraRunning) return;
+      // أبعاد مبدئية
+      video.width = 640;
+      video.height = 480;
+
+      camera = new Camera(video, {
+        onFrame: async () => {
+          await pose.send({image: video});
+        },
+        width: 640,
+        height: 480
+      });
+      camera.start();
+      cameraRunning = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    }
+
+    // إيقاف الكاميرا
+    function stopCamera(){
+      if (!cameraRunning) return;
+      if (camera) camera.stop();
+      cameraRunning = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      ctx.clearRect(0,0,overlay.width,overlay.height);
+    }
+
+    // التقاط صورة دمج الفيديو والكانفاس (snapshot)
+    function captureSnapshot(){
+      // نصنع كانفاس مؤقت بنفس أبعاد overlay
+      const tmp = document.createElement('canvas');
+      tmp.width = overlay.width;
+      tmp.height = overlay.height;
+      const tctx = tmp.getContext('2d');
+
+      // نرسم الفيديو (مرآة كما يظهر للمستخدم)
+      // لرسم الفيديو المقلوب: نستخدم translate + scaleX(-1)
+      tctx.save();
+      tctx.translate(tmp.width,0);
+      tctx.scale(-1,1);
+      // نرسم إطار الفيديو الحالي (video عنصر)
+      // ملاحظة: drawImage(video,...) يعمل فقط إذا السيستم يسمح (same-origin) — على localhost عادة OK
+      tctx.drawImage(video, 0, 0, tmp.width, tmp.height);
+      tctx.restore();
+
+      // نرسم طبقة الoverlay عليها
+      tctx.drawImage(overlay, 0, 0, tmp.width, tmp.height);
+
+      // نتحصل على Data URL ونظهره
+      const dataURL = tmp.toDataURL('image/png');
+      snapshotImg.src = dataURL;
+      snapshotArea.style.display = 'block';
+
+      // نجهز رابط تحميل تلقائي
+      const a = document.createElement('a');
+      a.href = dataURL;
+      a.download = 'virtual_tryon_snapshot.png';
+      a.click();
+    }
+
+    // رفع صورة من الملف واستخدامها كقميص
+    fileInput.addEventListener('change', (e)=>{
+      if (!e.target.files || e.target.files.length === 0) return;
+      const f = e.target.files[0];
+      const img = new Image();
+      const url = URL.createObjectURL(f);
+      img.onload = () => {
+        currentClothImage = img;
+        currentClothMode = 'image';
+        // تمييز الthumb المرفوع
+        setSelectedThumb(null);
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+
+    clearUpload.addEventListener('click', ()=>{
+      currentClothImage = null;
+      // إعادة الوضع الافتراضي لقميص أحمر
+      currentClothMode = 'svg_shirt_red';
+      setSelectedThumb(document.querySelector('[data-id="shirt_red"]'));
+      fileInput.value = '';
+    });
+
+    // أزرار التحكم
+    startBtn.addEventListener('click', startCamera);
+    stopBtn.addEventListener('click', stopCamera);
+    captureBtn.addEventListener('click', captureSnapshot);
+
+    // تهيئة gallery (الـ thumbs داخل العنصر)
+    document.querySelectorAll('.thumb').forEach(t=>{
+      // العناصر التي لديها بيانات مسبقة
+      const type = t.dataset.type;
+      const id = t.dataset.id;
+      t.addEventListener('click', ()=>{
+        if (id === 'shirt_red' || t.id === 'thumbNone' || id === 'shirt_blue' || id === 'shirt_green'){
+          // حالة القمصان المرسومة
+          currentClothImage = null;
+          currentClothMode = id === undefined ? 'none' : (id === 'shirt_red' ? 'svg_shirt_red' : (id === 'shirt_blue' ? 'svg_shirt_blue' : (id === 'shirt_green' ? 'svg_shirt_green' : 'none')));
+          setSelectedThumb(t);
+        } else {
+          // حالات عامة
+          currentClothMode = type || 'svg';
+          setSelectedThumb(t);
+        }
+      });
+    });
+
+    function setSelectedThumb(t){
+      document.querySelectorAll('.thumb').forEach(el=>el.classList.remove('selected'));
+      if (t) t.classList.add('selected');
+      selectedThumb = t;
+    }
+
+    // اختيار افتراضي
+    setSelectedThumb(document.querySelector('[data-id="shirt_red"]'));
+
+    // إعادة ضبط أحجام overlay عند تغيير حجم النافذة
+    window.addEventListener('resize', resizeOverlay);
+
+    // تلميح للمطور: لإيقاف رسم نقاط تصحيح - قم بتعليق السطر drawDebugPoints داخل onResults
+    // انتهى الكود
+  </script>
+</body>
+</html>
